@@ -8,3 +8,5 @@ Example data can be found in the branch named "Data".
 Created graph can be found in the branch named "Graphs".
 
 Make sure to adjust the paths in the code.
+
+![image](https://user-images.githubusercontent.com/99960828/221403073-f1d15669-6a7c-4e51-b428-7d70bcf195b0.png)
