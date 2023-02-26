@@ -1,0 +1,276 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Jul 15 18:31:23 2022
+
+@author: KO
+"""
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import seaborn as sns
+import glob
+import os
+from scipy.optimize import curve_fit
+from sklearn.linear_model import LinearRegression
+from io import StringIO
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import seaborn as sns
+import glob
+import os
+from scipy.optimize import curve_fit
+from sklearn.linear_model import LinearRegression
+from io import StringIO
+import scipy as scipy
+from natsort import natsorted
+from scipy import sparse
+from scipy.sparse.linalg import spsolve
+from scipy.signal import savgol_filter
+
+#Appearance stuff (colors, font size etc)
+
+#My colors
+# mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=['#c3121e', '#0348a1', '#ffb01c', '#027608', '#0193b0', '#9c5300', '#949c01', '#7104b5'])
+#                                                       0sangre,   1neptune,  2pumpkin,  3clover,   4denim,    5cocoa,    6cumin,    7berry3
+
+
+# mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=['#e41a1c','#377eb8', '#ff7f00', '#4daf4a','#f781bf', '#a65628', '#984ea3','#999999', '#dede00'])
+
+# Nature colors
+mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=['0C5DA5', 'FF2C00', 'FF9500', '00B945', '845B97', '474747', '9e9e9e'])
+
+#Seaborn colors
+# colors=sns.color_palette("rocket",3)
+
+# Font size. Dictionary taking numerous parameters.
+plt.rcParams.update({'font.size' : 12})
+
+
+# Gets current working directory (cwd)
+cwd=os.getcwd()
+
+#specimens in question
+no=r"0.5 mm"
+path=r"YOUR PATH"
+#New Folder
+#Maptest_60
+
+# folder='\\Raman spectra of '+ no +' fibers\\'
+
+#Creates a folder to store the graphs inside the cwd
+# mesa= cwd + folder
+# if not os.path.exists(mesa):
+#     os.makedirs(mesa)
+
+#Path to data. Full path if in different folder than this script is. Otherwise *files common name part*".
+file_list = [i for i in glob.glob('Path/*')]
+#Sort in order of number appearing in front. Omit or adjust accordingly in case of different naming.
+# file_list=natsorted(file_list)
+
+# Loading all the csv files to create a list of data frames
+data = [pd.read_csv(file,names=["Wavenumber","Intensity"], skiprows=1,delimiter='	') for file in file_list]
+
+#Replaces the useless part of the dataframes' names to auto-generate a better suited legend.
+file_list=[file.replace("Path\\", '') for file in file_list]
+file_list=[file.replace('.txt','') for file in file_list]
+# file_list=[file.replace('_',' #') for file in file_list]
+
+
+from scipy.linalg import cholesky
+def arpls(y, lam=1e4, ratio=0.05, itermax=100):
+    N = len(y)
+    D = sparse.eye(N, format='csc')
+    D = D[1:] - D[:-1]  # numpy.diff( ,2) does not work with sparse matrix. This is a workaround.
+    D = D[1:] - D[:-1]
+    H = lam * D.T * D
+    w = np.ones(N)
+    for i in range(itermax):
+        W = sparse.diags(w, 0, shape=(N, N))
+        WH = sparse.csc_matrix(W + H)
+        C = sparse.csc_matrix(cholesky(WH.todense()))
+        z = spsolve(C, spsolve(C.T, w * y))
+        d = y - z
+        dn = d[d < 0]
+        m = np.mean(dn)
+        s = np.std(dn)
+        wt = 1. / (1 + np.exp(2 * (d - (2 * s - m)) / s))
+        if np.linalg.norm(w - wt) / np.linalg.norm(w) < ratio:
+            break
+        w = wt
+    return z
+
+
+#Lists with peaks info
+D_intensity=[]
+D_location=[]
+D_width=[]
+
+G_intensity=[]
+G_location=[]
+G_width=[]
+
+ID_IG=[]
+
+
+def _1Lorentzian(x, amp, cen, wid):
+    return amp*wid**2/((x-cen)**2+wid**2)
+
+#2 lorentzian in reality
+def _3Lorentzian(x, amp1, cen1, wid1, amp2,cen2,wid2, amp3, cen3, wid3):#, amp4, cen4, wid4
+    return (amp1*wid1**2/((x-cen1)**2+wid1**2)) + (amp2*wid2**2/((x-cen2)**2+wid2**2))+(amp3*wid3**2/((x-cen3)**2+wid3**2)) #+(amp4*wid4**2/((x-cen4)**2+wid4**2))
+
+#Plot in the same graph. Can as well locate columns with name but .iloc is useful af. Do as I say, not as I do.
+for index, dataframe in enumerate(data):
+    # fig = plt.figure(figsize=(5,5),dpi=300)
+    baseline = arpls(data[index]['Intensity'][:], 1E6, 0.001)
+    baseline_subtracted = data[index]['Intensity'][:] - baseline
+    x=data[index]['Wavenumber'].copy()
+    y=baseline_subtracted
+    window_length=9
+    w = savgol_filter(y, window_length, 2)
+    # plt.plot(x, w,label=file_list[index],linestyle='-', linewidth=1,)  # smooth by filter
+    # plt.minorticks_on() #uses minor ticks
+    # plt.tick_params(direction='in',which='minor', length=2, bottom=True, top=False, left=True, right=False) 
+    # plt.tick_params(direction='in',which='major', length=4, bottom=True, top=False, left=True, right=False)
+    # plt.grid(True,linestyle='dashed', linewidth='0.3', color='grey',alpha=0.8)
+    # plt.xlabel(r'Wavenumber (cm$^{-1}$)')
+    # plt.ylabel(r'Raman Intensity (a.u.)')
+    # plt.legend(loc=('upper right'),frameon=False)
+    
+    #Lorentz analysis
+    x_array=data[index]['Wavenumber'].copy()
+    y_array=baseline_subtracted.copy()
+    
+    popt_3lorentz, pcov_3lorentz = scipy.optimize.curve_fit(_3Lorentzian, x_array, y_array, p0=[600, 1300, 100,800, 1500, 100, 400,2700,100]) #,700,2600,100
+    
+    perr_3lorentz = np.sqrt(np.diag(pcov_3lorentz))
+    
+    pars_1 = popt_3lorentz[0:3]
+    pars_2 = popt_3lorentz[3:6]
+    pars_3 = popt_3lorentz[6:9]
+    lorentz_peak_1 = _1Lorentzian(x_array, *pars_1)
+    lorentz_peak_2 = _1Lorentzian(x_array, *pars_2)
+    lorentz_peak_3 = _1Lorentzian(x_array, *pars_3)
+    # lorentz_peak_4 = _1Lorentzian(x_array, *pars_4)
+    
+    residual_3lorentz = y_array - (_3Lorentzian(x_array, *popt_3lorentz))
+    
+    # fig = plt.figure(figsize=(5,5),dpi=300)
+    # plt.plot(x_array, _3Lorentzian(x_array, *popt_3lorentz), 'r--', linewidth=0.7)
+    
+    # #peak 1
+    # plt.plot(x_array, lorentz_peak_1, "g",linestyle='-', linewidth=0.7)
+    # plt.fill_between(x_array, lorentz_peak_1.min(), lorentz_peak_1, facecolor="green", alpha=0.5)
+    
+    # # peak 2
+    # plt.plot(x_array, lorentz_peak_2, "y",linestyle='-', linewidth=0.7)
+    # plt.fill_between(x_array, lorentz_peak_2.min(), lorentz_peak_2, facecolor="yellow", alpha=0.5)
+    
+    # # peak 3
+    # plt.plot(x_array, lorentz_peak_3, "r",linestyle='-', linewidth=0.7)
+    # plt.fill_between(x_array, lorentz_peak_3.min(), lorentz_peak_3, facecolor="red", alpha=0.5)
+
+    # #saving
+    # plt.savefig(mesa+'#'+str(index+1)+'_'+no+'_fiber'+'.png', dpi=300,bbox_inches="tight")
+    
+    #Find peaks location, width and intensity and appened them to the respective list
+    D_intensity.append(pars_1[0])
+    D_location.append(pars_1[1])
+    D_width.append(pars_1[2])
+    
+    G_intensity.append(pars_2[0])
+    G_location.append(pars_2[1])
+    G_width.append(pars_2[2])
+
+    ID_IG.append(D_intensity[index]/G_intensity[index])
+    
+# Saves the coupons data in excel
+# with pd.ExcelWriter('All coupons data.xlsx', engine='xlsxwriter') as writer:
+#   for num,count in enumerate(data,start=0):
+#     data[num].to_excel(writer, sheet_name=file_list[num]) #writes data in different sheets
+#     data[num].to_excel(writer, sheet_name=file_list[num]) # add directly after to write them in the yellow/green/blue fashion: style.background_gradient(axis=0,cmap='YlGnBu')
+from statistics import mean
+from statistics import stdev
+
+average_D_location=round(mean(D_location[:]),3)
+dev_D_location=round(stdev(D_location[:]),3)
+
+average_G_location=round(mean(G_location[:]),3)
+dev_G_location=round(stdev(G_location[:]),3)
+
+average_D_intensity=round(mean(D_intensity[:]),3)
+dev_D_intensity=round(stdev(D_intensity[:]),3)
+
+average_G_intensity=round(mean(G_intensity[:]),3)
+dev_G_intensity=round(stdev(G_intensity[:]),3)
+
+average_D_width=round(mean(D_width[:]),3)
+dev_D_width=round(stdev(D_width[:]),3)
+
+average_G_width=round(mean(G_width[:]),3)
+dev_G_width=round(stdev(G_width[:]),3)
+
+average_ID_IG=round(mean(ID_IG[:]),3)
+dev_ID_IG=round(stdev(ID_IG[:]),3)
+
+
+#%%
+names=file_list.copy()
+x_coordinate=[]
+y_coordinate=[]
+
+for name in names:
+   a=name.split('__',4)
+   b=a[2].split('_')[1]
+   x_coordinate.append(float(b))
+   c=a[3].split('_')[1]
+   y_coordinate.append(float(c))
+
+
+df = pd.DataFrame(list(zip(x_coordinate, y_coordinate,ID_IG)), columns =['x', 'y',"ID/IG intensity"])
+
+arr=df.to_numpy()
+
+plt.rcParams.update({'font.size' : 20})
+
+Z = df.pivot_table(index='y', columns='x', values='ID/IG intensity').values
+# Z = df.pivot_table(index='x', columns='y', values='ID/IG intensity').values
+X_unique = np.sort(df.x.unique())
+Y_unique = np.sort(df.y.unique())
+X, Y = np.meshgrid(X_unique, Y_unique)
+
+# from IPython.display import set_matplotlib_formats
+
+# set_matplotlib_formats('svg')
+
+# import matplotlib.pyplot as plt
+# from matplotlib import rcParams
+
+
+# # Initialize plot objects
+# rcParams['figure.figsize'] = 5, 5 # sets plot size
+fig = plt.figure(figsize=(9,7))
+# ax = fig.add_subplot(111)
+
+# Generate a contour plot
+cp = plt.contourf(X, Y, Z,22,cmap='jet')
+plt.title('I$_D$/I$_G$ intensity ratio')
+plt.colorbar()#label=r"wasting time on projects I'll never work on")
+plt.grid(True,linestyle='dashed', linewidth='0.7', color='black',alpha=1)
+plt.xlabel(r'x')
+plt.ylabel(r'y')
+ax=plt.gca()
+plt.gca().invert_yaxis()
+ax.set_yticklabels([])
+ax.set_xticklabels([])
+plt.tick_params(axis='x',which='both',bottom=False,top=False, labelbottom=False)
+plt.tick_params(axis='y',which='both',left=False,right=False, labelbottom=False)
+
+
+plt.savefig('NAME.png')
